@@ -1,0 +1,26 @@
+{
+    "name": "Game.App",
+    "rootNamespace": "Game.App",
+    "references": [
+        "GUID:38168c9afa16122448109c61669d6117",
+        "GUID:a33aff2f4070a404b86d1599e8894fd7",
+        "GUID:0182a61aefdc99c499ccffc5fcabe225",
+        "GUID:154f8497716750f4bb26503df50a5f35",
+        "GUID:93f917356d30e9642be28cf70d886506",
+        "GUID:b1ddd598ad92b224c8c932c56a2087c8",
+        "GUID:e7c709a06f6f34b41a286a2e29837c6e",
+        "GUID:b0214a6008ed146ff8f122a6a9c2f6cc",
+        "GUID:f51ebe6a0ceec4240a699833d6309b23",
+        "GUID:77221876cc6b8244180b96e320b1bcd4",
+        "GUID:caca889fed6088d40b22c2d7e2909c31"
+    ],
+    "includePlatforms": [],
+    "excludePlatforms": [],
+    "allowUnsafeCode": false,
+    "overrideReferences": false,
+    "precompiledReferences": [],
+    "autoReferenced": true,
+    "defineConstraints": [],
+    "versionDefines": [],
+    "noEngineReferences": false
+}

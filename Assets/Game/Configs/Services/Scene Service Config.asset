@@ -1,0 +1,18 @@
+%YAML 1.1
+%TAG !u! tag:unity3d.com,2011:
+--- !u!114 &11400000
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 0}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 4b0634bdec9b4914792d5fffc47fe856, type: 3}
+  m_Name: Scene Service Config
+  m_EditorClassIdentifier: Game.Services::Game.Services.SceneService.SceneServiceConfig
+  CoreScene: {fileID: 11400000, guid: cf7a0b6d1ed54ce4d888e57b3f8a5eb1, type: 2}
+  OtherScenes:
+  - {fileID: 11400000, guid: d1e024118e69fe441b75b8c276451b53, type: 2}
+  - {fileID: 11400000, guid: 4abab2d860f4b494dbc886b4c6280b65, type: 2}
