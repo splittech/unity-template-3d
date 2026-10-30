@@ -1,0 +1,191 @@
+# Сборка Windows-билда через Unity CLI (`unity`) и публикация релиза на GitHub Releases.
+#
+# Когда запускается:
+#   - push в ветку release (в том числе merge PR);
+#   - pull request в ветку release (открытие, новые коммиты, переоткрытие).
+# На каждый запуск создаётся новый тег vX.Y.Z (патч +1 от последнего тега) и релиз
+# с zip-архивом билда.
+#
+# Версия Unity берётся из ProjectSettings/ProjectVersion.txt.
+#
+# Нужные секреты (Settings → Secrets and variables → Actions), подробнее — Docs/CI.md:
+#   UNITY_EMAIL    — почта Unity-аккаунта;
+#   UNITY_PASSWORD — пароль Unity-аккаунта;
+#   UNITY_LICENSE  — содержимое файла Unity_lic.ulf (Unity Personal);
+#   UNITY_SERIAL   — серийный номер (только Pro/Plus, вместо UNITY_LICENSE).
+
+name: Release
+
+on:
+  push:
+    branches: [release]
+  pull_request:
+    branches: [release]
+    types: [opened, synchronize, reopened]
+
+permissions:
+  contents: write
+
+# Запуски идут строго по очереди, чтобы два параллельных не взяли одну и ту же версию.
+concurrency:
+  group: release-${{ github.repository }}
+  cancel-in-progress: false
+
+env:
+  TARGET_PLATFORM: StandaloneWindows64
+  UNITY_CLI_CHANNEL: beta
+  UNITY_NON_INTERACTIVE: "1"
+  UNITY_NO_CONSENT_PROMPT: "1"
+  UNITY_NO_CRASH_REPORT: "1"
+  UNITY_NO_UPDATE_CHECK: "1"
+
+jobs:
+  build-and-release:
+    name: Build Windows and publish release
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+    # PR из форков не получают секретов и права на запись — пропускаем их.
+    if: github.event_name == 'push' || github.event.pull_request.head.repo.full_name == github.repository
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          # Для PR собираем и тегаем последний коммит PR, а не временный merge-коммит.
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+          fetch-depth: 0
+
+      - name: Read Unity version
+        run: |
+          editor=$(grep -oP '^m_EditorVersion:\s*\K\S+' ProjectSettings/ProjectVersion.txt)
+          echo "Unity version: $editor"
+          echo "UNITY_EDITOR_VERSION=$editor" >> "$GITHUB_ENV"
+
+      - name: Compute next version
+        id: version
+        run: |
+          latest=$(git tag --list 'v*' --sort=-v:refname | grep -E '^v[0-9]+\.[0-9]+\.[0-9]+$' | head -n1 || true)
+          if [ -z "$latest" ]; then
+            # Тегов ещё нет — первый релиз берёт bundleVersion из ProjectSettings.
+            version=$(grep -oP 'bundleVersion:\s*\K[0-9]+\.[0-9]+\.[0-9]+' ProjectSettings/ProjectSettings.asset || echo "0.1.0")
+          else
+            IFS='.' read -r major minor patch <<< "${latest#v}"
+            version="$major.$minor.$((patch + 1))"
+          fi
+          echo "Latest tag: ${latest:-<none>}, next version: $version"
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+          echo "tag=v$version" >> "$GITHUB_OUTPUT"
+
+      - name: Restore Library
+        uses: actions/cache@v4
+        with:
+          path: Library
+          key: Library-${{ env.TARGET_PLATFORM }}-${{ hashFiles('Assets/**', 'Packages/**', 'ProjectSettings/**') }}
+          restore-keys: |
+            Library-${{ env.TARGET_PLATFORM }}-
+            Library-
+
+      - name: Install Unity CLI
+        run: |
+          curl -fsSL https://public-cdn.cloud.unity3d.com/hub/prod/cli/install.sh | UNITY_CLI_CHANNEL=beta bash
+          echo "$HOME/.local/bin" >> "$GITHUB_PATH"
+
+      # windows-mono — модуль сборки Windows-плеера на Linux-раннере (бэкенд Mono).
+      - name: Install Unity Editor
+        run: |
+          unity --version
+          unity install "$UNITY_EDITOR_VERSION" --module windows-mono --yes --accept-eula
+          unity editors -i
+
+      - name: Find Editor path
+        run: |
+          EDITOR_PATH=$(unity editors -i --format json | jq -r --arg v "$UNITY_EDITOR_VERSION" '.[] | select(.version==$v) | .path' | head -n1)
+          if [ -z "$EDITOR_PATH" ]; then
+            EDITOR_PATH=$(find /opt /home -name Unity -type f 2>/dev/null | head -n1)
+          fi
+          echo "Using editor: $EDITOR_PATH"
+          echo "EDITOR_PATH=$EDITOR_PATH" >> "$GITHUB_ENV"
+
+      - name: Activate license
+        env:
+          UNITY_EMAIL: ${{ secrets.UNITY_EMAIL }}
+          UNITY_PASSWORD: ${{ secrets.UNITY_PASSWORD }}
+          UNITY_SERIAL: ${{ secrets.UNITY_SERIAL }}
+          UNITY_LICENSE: ${{ secrets.UNITY_LICENSE }}
+        run: |
+          if [ -n "$UNITY_SERIAL" ]; then
+            # Pro / Plus: активация по серийнику.
+            "$EDITOR_PATH" -batchmode -nographics -quit \
+              -serial "$UNITY_SERIAL" \
+              -username "$UNITY_EMAIL" \
+              -password "$UNITY_PASSWORD" \
+              -logFile -
+            echo "LICENSE_MODE=serial" >> "$GITHUB_ENV"
+          elif [ -n "$UNITY_LICENSE" ]; then
+            # Personal: из командной строки Personal не активируется, нужен файл Unity_lic.ulf,
+            # полученный в Unity Hub. Кладём его вне репозитория.
+            printf '%s' "$UNITY_LICENSE" > "$RUNNER_TEMP/Unity_lic.ulf"
+            "$EDITOR_PATH" -batchmode -nographics -quit \
+              -manualLicenseFile "$RUNNER_TEMP/Unity_lic.ulf" \
+              -logFile - || true
+            rm -f "$RUNNER_TEMP/Unity_lic.ulf"
+            echo "LICENSE_MODE=personal" >> "$GITHUB_ENV"
+          else
+            echo "::error::Добавьте секрет UNITY_LICENSE (Personal) или UNITY_SERIAL (Pro), см. Docs/CI.md"
+            exit 1
+          fi
+
+      - name: Build
+        run: |
+          unity build "$GITHUB_WORKSPACE" \
+            --editor-version "$UNITY_EDITOR_VERSION" \
+            --target "$TARGET_PLATFORM" \
+            --output-path "$GITHUB_WORKSPACE/build/$TARGET_PLATFORM/${{ github.event.repository.name }}.exe" \
+            --provenance-path "$GITHUB_WORKSPACE/build/provenance.json" \
+            --versioning-strategy custom \
+            --build-version "${{ steps.version.outputs.version }}" \
+            --format github \
+            --args "-nographics"
+
+      - name: Zip build
+        id: zip
+        run: |
+          archive="${{ github.event.repository.name }}-${{ steps.version.outputs.tag }}-Windows64.zip"
+          (cd "build/$TARGET_PLATFORM" && zip -r -q "$GITHUB_WORKSPACE/$archive" . \
+            -x '*_BurstDebugInformation_DoNotShip/*' '*_BackUpThisFolder_ButDontShipItWithYourGame/*')
+          echo "archive=$archive" >> "$GITHUB_OUTPUT"
+
+      - name: Publish release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ steps.version.outputs.tag }}
+          target_commitish: ${{ github.event.pull_request.head.sha || github.sha }}
+          name: ${{ steps.version.outputs.tag }}
+          body: ${{ github.event_name == 'pull_request' && format('Сборка из PR #{0}: {1}', github.event.pull_request.number, github.event.pull_request.title) || '' }}
+          generate_release_notes: true
+          # provenance.json — манифест сборки (версия редактора, пакеты, коммит), без секретов.
+          files: |
+            ${{ steps.zip.outputs.archive }}
+            build/provenance.json
+
+      # Логи сборки — на случай, если что-то пошло не так.
+      - name: Upload logs
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: build-logs
+          path: Logs/**
+          if-no-files-found: warn
+
+      # Возвращаем место серийника даже при падении или отмене, чтобы не копить активации.
+      # Personal-лицензию из .ulf возвращать не нужно.
+      - name: Return license
+        if: always() && env.LICENSE_MODE == 'serial'
+        env:
+          UNITY_EMAIL: ${{ secrets.UNITY_EMAIL }}
+          UNITY_PASSWORD: ${{ secrets.UNITY_PASSWORD }}
+        run: |
+          "$EDITOR_PATH" -batchmode -nographics -quit \
+            -returnlicense \
+            -username "$UNITY_EMAIL" \
+            -password "$UNITY_PASSWORD" \
+            -logFile - || true
