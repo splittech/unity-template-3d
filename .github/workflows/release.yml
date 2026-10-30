@@ -160,7 +160,7 @@ jobs:
           tag_name: ${{ steps.version.outputs.tag }}
           target_commitish: ${{ github.event.pull_request.head.sha || github.sha }}
           name: ${{ steps.version.outputs.tag }}
-          body: ${{ github.event_name == 'pull_request' && format('Сборка из PR #{0}: {1}', github.event.pull_request.number, github.event.pull_request.title) || '' }}
+          body: "${{ github.event_name == 'pull_request' && format('Сборка из PR #{0}: {1}', github.event.pull_request.number, github.event.pull_request.title) || '' }}"
           generate_release_notes: true
           # provenance.json — манифест сборки (версия редактора, пакеты, коммит), без секретов.
           files: |
