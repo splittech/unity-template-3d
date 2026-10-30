@@ -134,6 +134,15 @@ jobs:
             exit 1
           fi
 
+      # --versioning-strategy у `unity build` работает только с --execute-method,
+      # поэтому версию прописываем в bundleVersion (Application.version) сами.
+      - name: Set bundle version
+        run: |
+          sed -i -E "s/^(  bundleVersion: ).*/\1${{ steps.version.outputs.version }}/" ProjectSettings/ProjectSettings.asset
+          grep -n 'bundleVersion:' ProjectSettings/ProjectSettings.asset
+
+      # -batchmode, -quit, -nographics и -projectPath CLI передаёт редактору сам.
+      # --allow-dirty-build — из-за правки bundleVersion выше.
       - name: Build
         run: |
           unity build "$GITHUB_WORKSPACE" \
@@ -141,10 +150,8 @@ jobs:
             --target "$TARGET_PLATFORM" \
             --output-path "$GITHUB_WORKSPACE/build/$TARGET_PLATFORM/${{ github.event.repository.name }}.exe" \
             --provenance-path "$GITHUB_WORKSPACE/build/provenance.json" \
-            --versioning-strategy custom \
-            --build-version "${{ steps.version.outputs.version }}" \
-            --format github \
-            --args "-nographics"
+            --allow-dirty-build \
+            --format github
 
       - name: Zip build
         id: zip

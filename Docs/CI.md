@@ -14,7 +14,7 @@ Workflow `.github/workflows/release.yml` собирает Windows-билд (Stan
 1. Ставит Unity CLI (канал `beta`) на раннер `ubuntu-latest`.
 2. Читает версию редактора из `ProjectSettings/ProjectVersion.txt` и ставит её командой `unity install` с модулем `windows-mono` (сборка Windows-плеера на Linux). Папка `Library` кэшируется.
 3. Активирует лицензию самим редактором: для Personal — из файла `.ulf` (`-manualLicenseFile`), для Pro — по серийнику (`-serial -username -password`).
-4. Собирает билд: `unity build --target StandaloneWindows64 --versioning-strategy custom --build-version X.Y.Z`.
+4. Прописывает версию `X.Y.Z` в `bundleVersion` (только на раннере, в репозиторий не коммитится) и собирает билд: `unity build --target StandaloneWindows64`.
 5. Упаковывает билд в zip и публикует релиз. При падении прикладывает папку `Logs` как артефакт. Для Pro в конце возвращает лицензию (`-returnlicense`), даже если сборка упала.
 
 Бэкенд скриптов — Mono. Если переключите проект на IL2CPP, Windows-билд на Linux-раннере собрать не получится — понадобится раннер `windows-latest`.
